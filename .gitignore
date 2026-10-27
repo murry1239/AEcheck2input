@@ -1,0 +1,21 @@
+# 불만 원문·개인정보가 들어 있는 데이터는 올리지 않는다
+*.xls
+*.xlsx
+*.pdf
+*.zip
+inputs/
+outputs/
+work/
+logs/
+.runtime/
+.aci_lo/
+ACI_v1.0/
+aci/sample_review.json
+tools/prepare_sample.py
+AE Check in IDBI.txt
+
+# PC별 설정·실행 환경
+aci_settings.json
+node_modules
+__pycache__/
+tests/workspace_check/
