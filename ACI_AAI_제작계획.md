@@ -40,7 +40,11 @@
 
 실제 `.xls` 형식으로 출력해야 한다. `.xlsx`나 HTML 파일의 확장자만 `.xls`로 변경하지 않는다. 원본 내보내기 기능과 예상 데이터량을 확인한 뒤 출력 방법을 선택한다.
 
-## AAI 처리 흐름
+## AAI 방향 변경 (2026-11-03)
+
+웹 화면에서 safetyDB(cubeSAFETY)에 직접 입력하는 대신, 여러 안전성 DB(cubeSAFETY, Oracle Argus Safety, ArisGlobal LSMV, Veeva Vault Safety)가 공통으로 가져올 수 있는 **ICH E2B(R3) XML**을 만든다. 상세 매핑은 `AAI_0.1_작업명세.md`를 따른다. 아래 처리 흐름 중 로그인·화면 입력 단계는 XML 가져오기로 대체되고, 중복 확인은 사례 식별번호(C.1.1)로 한다.
+
+## AAI 처리 흐름 (초기안)
 
 1. safetyDB 로그인 상태를 확인한다.
 2. 입력 대상으로 확인된 ACI 항목을 읽는다.

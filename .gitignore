@@ -5,6 +5,9 @@
 *.zip
 inputs/
 outputs/
+aai_outputs/
+*.xml
+!aai/**/*.xml
 work/
 logs/
 .runtime/
@@ -14,8 +17,13 @@ aci/sample_review.json
 tools/prepare_sample.py
 AE Check in IDBI.txt
 
+# ICH E2B(R3) 패키지 (29MB, ICH 배포 자료). ICH 웹사이트에서 받아 같은 이름으로 두면 XSD 검증이 동작한다.
+E2B(R3)_IG_Complete _package v1_11/
+
 # PC별 설정·실행 환경
 aci_settings.json
+aai/aai_config.local.json
+xml파일예시_*/
 node_modules
 __pycache__/
 tests/workspace_check/
