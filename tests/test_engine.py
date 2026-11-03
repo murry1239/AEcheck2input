@@ -33,8 +33,13 @@ class EngineTests(unittest.TestCase):
         r=screen(self.make('복용하고 부작용 증상은 없음'),2,'s')
         self.assertEqual(r['ae'],'X')
 
-    def test_safety_label_does_not_prove_event(self):
-        r=screen(self.make('구매 가능한 약국 문의','유해사례 등의 안전성'),2,'s')
+    def test_safety_kind_in_f_forces_ae_o(self):
+        kind='유해사례 등의 안전성(경련,발열,복통,구토등)'
+        r=screen(self.make('구매 가능한 약국 문의',kind),2,'s')
+        self.assertEqual((r['ae'],r['summary']),('O','이상사례 내용 확인 필요'))
+        r=screen(self.make('먹고 나서 두통이 있었는지 궁금합니다',kind),2,'s')
+        self.assertEqual((r['ae'],r['summary']),('O','두통'))
+        r=screen(self.make('구매 가능한 약국 문의','기타'),2,'s')
         self.assertEqual(r['ae'],'X')
 
     def test_resolved_event_remains_an_ae(self):

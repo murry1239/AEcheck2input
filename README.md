@@ -4,7 +4,7 @@ IDBI VOC 불만 자료에서 이상사례(AE)를 확인해 엑셀로 정리하�
 
 | 모듈 | 내용 | 상태 |
 | --- | --- | --- |
-| ACI · AE Check in IDBI | `IDBI_YYYYMMDD.xls`를 읽어 H~M열 추가, AE O/X·인과관계 초안, G열 개인정보 익명화 | 0.2 |
+| ACI · AE Check in IDBI | `IDBI_YYYYMMDD.xls`를 읽어 H~M열 추가, AE O/X·인과관계 초안, G열 개인정보 익명화 | 0.3 |
 | AAI · AE Auto Input | 확인된 AE를 SafetyDB에 입력 | 설계 전 |
 
 ## ACI 실행

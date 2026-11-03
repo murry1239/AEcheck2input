@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parent
 RULES = json.loads((ROOT / 'rules.json').read_text(encoding='utf-8'))
 CATEGORIES = RULES['categories']
 FACT_KEYS = ('temporal', 'collected', 'dechallenge', 'rechallenge')
+# F열(문의종류)에 이 문구가 있으면 원문 판단과 관계없이 H열을 O로 한다.
+SAFETY_KIND = '유해사례'
+SAFETY_REASON = 'F열 문의종류가 유해사례이므로 AE O로 표시했습니다.'
+SUMMARY_TODO = '이상사례 내용 확인 필요'
+
+
+def forced_summary(terms, headings):
+    return '; '.join(dict.fromkeys(headings)) or ', '.join(terms) or SUMMARY_TODO
 
 
 def fingerprint(values):
@@ -50,6 +58,10 @@ def screen(values, row, sheet):
         ae = 'O'
         summary = ', '.join(terms)
         reasons.append('사용·복용 문맥과 증상 문구를 함께 확인한 후보입니다.')
+    elif SAFETY_KIND in kind:
+        ae = 'O'
+        summary = forced_summary(terms, headings)
+        reasons.append(SAFETY_REASON)
     else:
         ae = 'X'
         summary = ''
@@ -88,6 +100,9 @@ def analyze(workbook):
                 seed = {k: v for k, v in seeds[result['key']].items() if k != 'snippets'}
                 result.update(seed)
                 result['method'] = '원문 검토 초안'
+                if SAFETY_KIND in str(row['values'][5] or '') and result['ae'] != 'O':
+                    result.update(ae='O', summary=result.get('summary') or SUMMARY_TODO,
+                                  reason=SAFETY_REASON + ' ' + result.get('reason', ''))
             values = list(row['values'])
             values[6], result['anonymized'] = anonymize(values[6])
             result['values'] = values

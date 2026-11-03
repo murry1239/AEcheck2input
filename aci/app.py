@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from engine import analyze, validate_records
 
-VERSION = '0.2'
+VERSION = '0.3'
 ROOT = Path(__file__).resolve().parents[1]
 SETTINGS = ROOT / 'aci_settings.json'
 WORKSPACE = ROOT
