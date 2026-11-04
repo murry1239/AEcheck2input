@@ -6,6 +6,8 @@
 inputs/
 outputs/
 aai_outputs/
+ACI_outputs/
+AAI_outputs/
 *.xml
 !aai/**/*.xml
 work/

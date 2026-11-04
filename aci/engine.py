@@ -9,6 +9,7 @@ from anonymize import anonymize
 ROOT = Path(__file__).resolve().parent
 RULES = json.loads((ROOT / 'rules.json').read_text(encoding='utf-8'))
 CATEGORIES = RULES['categories']
+SAE_OPTIONS = RULES['sae_options']  # J열: NI(중대하지 않음/정보 없음) 또는 E.i.3.2a~f 중 하나
 FACT_KEYS = ('temporal', 'collected', 'dechallenge', 'rechallenge')
 # F열(문의종류)에 이 문구가 있으면 원문 판단과 관계없이 H열을 O로 한다.
 SAFETY_KIND = '유해사례'
@@ -84,6 +85,7 @@ def screen(values, row, sheet):
     if ae == 'O' and not category:
         reasons.append('인과관계 기준을 확인할 정보가 부족하여 K열을 비워 둡니다.')
     return dict(sheet=sheet, row=row, key=fingerprint(values), ae=ae, summary=summary,
+                sae=SAE_OPTIONS[0] if ae == 'O' else '',
                 facts=facts, relatedness=category, reason=' '.join(reasons),
                 reviewed=False, method='규칙 초안')
 
@@ -103,6 +105,7 @@ def analyze(workbook):
                 if SAFETY_KIND in str(row['values'][5] or '') and result['ae'] != 'O':
                     result.update(ae='O', summary=result.get('summary') or SUMMARY_TODO,
                                   reason=SAFETY_REASON + ' ' + result.get('reason', ''))
+                result['sae'] = SAE_OPTIONS[0] if result['ae'] == 'O' else ''
             values = list(row['values'])
             values[6], result['anonymized'] = anonymize(values[6])
             result['values'] = values
@@ -129,6 +132,9 @@ def validate_records(records, source_records):
             raise ValueError('K열 값이 허용된 네 가지 범주에 없습니다.')
         if r['ae'] == 'X' and r.get('relatedness'):
             raise ValueError('AE가 X인 행의 K열은 비워 주세요.')
+        if r.get('sae', '') not in ['', *SAE_OPTIONS]:
+            raise ValueError(f"{r['row']}행 J열(SAE) 값이 선택 항목에 없습니다.")
+        r['sae'] = (r.get('sae') or SAE_OPTIONS[0]) if r['ae'] == 'O' else ''
         if r['ae'] == 'O' and not r.get('summary', '').strip():
             raise ValueError('AE가 O인 행에 이상사례 내용을 입력하세요.')
         if len(r.get('summary', '')) > 32000:

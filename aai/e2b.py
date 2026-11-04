@@ -25,6 +25,47 @@ CAUSALITY_EN = {'확실함': 'Certain', '상당히 확실함': 'Probable', '가�
 SUMMARY_TODO = '이상사례 내용 확인 필요'  # ACI가 F열 유해사례 행에 넣는 문구
 # E.i.3.2a~f: 사망, 생명 위협, 입원/연장, 장애, 선천 이상, 기타 의학적으로 중요
 SERIOUSNESS = ('34', '21', '33', '35', '12', '26')
+REPORTER = {'1': '의사', '2': '약사', '3': '보건의료전문가', '4': '법률가', '5': '소비자'}  # C.2.r.4
+# 서술에서 뺄 VOC 머리말·상담 인사말
+CHANNEL = re.compile(r'^\(.{1,20}\)$')  # 맨 위의 (홈페이지), (아웃콜) 같은 접수 경로
+DROP_LINE = re.compile(r'^(?:최초\s*(?:인입|접수)일|답변\s*방법|이메일|전화\s*번호|고객\s*명|제목)(?:\s|[:：]|$)'
+                       r'|^(?:문의|답변)\s*[:：)]'
+                       r'|^(?:문의|답변)\)?$|^안녕하세요,?\s*일동제약입니다\.?$|^감사합니다\.?$'
+                       r'|홈페이지를 방문해 주셔서|담당 부서로 전달하여|이메일로 답변드린 것으로')
+ARROW = re.compile(r'^\s*(?:->|=>|→|>)\s*')
+
+
+def sae_criterion(value):
+    """J열 → E.i.3.2 순번(0=a 사망 … 5=f 기타). NI·빈칸 → None, 형식을 알 수 없으면 -1."""
+    text = str(value or '').strip()
+    if not text or text.upper() == 'NI':
+        return None
+    m = re.match(r'([a-fA-F])\s*[.)]', text)
+    return 'abcdef'.index(m.group(1).lower()) if m else -1
+
+
+def clean_story(text):
+    """G열 원문에서 VOC 머리말·인사말을 빼고 상담 답변(-> …)은 ‘- ’ 목록으로 바꾼다."""
+    out, in_answer = [], False
+    for line in str(text or '').replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+        raw = line.rstrip()
+        stripped = raw.strip()
+        if not stripped:
+            in_answer = False
+            out.append('')
+            continue
+        if DROP_LINE.search(stripped) or (CHANNEL.match(stripped) and not any(out)):
+            continue
+        stripped = re.sub(r'^문의\s*내용\s*[:：]?\s*', '', stripped)
+        if ARROW.match(raw):
+            in_answer = True
+            out.append('- ' + ARROW.sub('', raw).strip())
+        elif in_answer and raw[:1] in (' ', '\t'):
+            out.append('- ' + stripped)
+        else:
+            in_answer = stripped.startswith('- ')
+            out.append(stripped)
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()
 
 # ACI 결과 열 순서 (A~M)
 COLS = ('kind', 'date', 'sex', 'age', 'product', 'inquiry', 'text', 'ae', 'cube', 'sae', 'relatedness', 'qc', 'comment')
@@ -78,7 +119,7 @@ def case_id(cfg, report_date, row, cube=''):
         if not re.search(r'_\d+$', cube):
             cube += cfg['case_version_suffix']
         return cube
-    return f"{cfg['country']}-{cfg['company_code']}-IDBI{report_date}-{row:04d}"
+    return f"{cfg['case_prefix']}{report_date}SP-{row:03d}"  # 임시 번호: KR-ID-20261103SP-050
 
 
 def age_group(age):
@@ -105,15 +146,23 @@ def el(parent, tag, text=None, xsi_type=None, **attrs):
     return e
 
 
-def narrative(c):
-    lines = [f"[IDBI VOC] 접수일 {c['date_text']} · 구분 {c['kind'] or '미기재'} · 문의종류 {c['inquiry'] or '미기재'}",
-             f"환자: 성별 {c['sex'] or '미기재'}, 나이 {c['age'] or '미기재'}",
+def narrative(c, cfg):
+    """H.1: 요약 머리말 + ‘70대 남성 소비자가 보고함.’으로 시작하는 정리된 원문."""
+    sex = {'1': '남성', '2': '여성'}.get(to_sex(c['sex']), '')
+    age = c['age'] + '세' if re.fullmatch(r'\d{1,3}', c['age']) else c['age']  # '60' → '60세', '70대'는 그대로
+    lines = [f"접수일 {c['date_text']}",
+             f"원보고자: 성별 {sex or '미기재'}, 나이 {age or '미기재'}",
              f"의심 제품: {c['product'] or '미기재'}",
-             f"이상사례(ACI H열): {', '.join(c['terms']) or '미기재'}"]
+             f"이상사례: {', '.join(c['terms']) or '미기재'}"]
+    if sae_criterion(c['sae']) not in (None, -1):
+        lines.append(f"중대성: {c['sae']}")
     if c['relatedness']:
-        lines.append(f"인과관계(ACI K열): {c['relatedness']}")
-    lines += ['', '불만 원문(개인정보 익명화):', c['text']]
-    return '\n'.join(lines)
+        lines.append(f"회사 인과관계: {c['relatedness']}")
+    who = ' '.join(x for x in (age, sex) if x)
+    reporter = REPORTER.get(cfg.get('reporter_qualification', ''), '보고자')
+    opening = f"{who} {reporter}가 보고함." if who else f"{reporter}가 보고함."
+    story = clean_story(c['text'])
+    return '\n'.join(lines) + '\n\n' + (opening + ' ' + story if story else opening)
 
 
 def build(c, cfg, meddra, now=None):
@@ -122,6 +171,7 @@ def build(c, cfg, meddra, now=None):
     stamp = now.strftime('%Y%m%d%H%M%S') + cfg['timezone']
     cid = c['case_id']
     issues = [] if c['cube'] else ['I열(Cube) 사례번호가 없어 임시 번호를 썼습니다. cubeSAFETY 사례번호를 I열에 넣어 주세요.']
+    criterion = sae_criterion(c['sae'])
     version = meddra.get('meddra_version', '').strip()
     codes = meddra.get('terms', {})
 
@@ -152,7 +202,7 @@ def build(c, cfg, meddra, now=None):
     el(inv, 'id', extension=cid, root=ICH + '.3.1')  # C.1.1
     el(inv, 'id', extension=cid, root=ICH + '.3.2')  # C.1.8.1
     el(inv, 'code', code='PAT_ADV_EVNT', codeSystem='2.16.840.1.113883.5.4')
-    story = narrative(c)
+    story = narrative(c, cfg)
     el(inv, 'text', story)  # H.1
     el(inv, 'statusCode', code='active')
     el(el(inv, 'effectiveTime'), 'low', value=c['report_date'])  # C.1.4
@@ -204,17 +254,22 @@ def build(c, cfg, meddra, now=None):
         place = el(el(el(obs, 'location', typeCode='LOC'), 'locatedEntity', classCode='LOCE'),
                    'locatedPlace', classCode='COUNTRY', determinerCode='INSTANCE')
         el(place, 'code', code=cfg['country'], codeSystem=COUNTRY)  # E.i.9
-        for code_ in SERIOUSNESS:  # E.i.3.2a~f: 중대성 정보 없음
+        for index, code_ in enumerate(SERIOUSNESS):  # E.i.3.2a~f: J열 기준만 true, 나머지 NI
             sub = el(el(obs, 'outboundRelationship2', typeCode='PERT'), 'observation', classCode='OBS', moodCode='EVN')
             el(sub, 'code', code=code_, codeSystem=OBS_CODE)
-            el(sub, 'value', xsi_type='BL', nullFlavor='NI')
+            if index == criterion:
+                el(sub, 'value', xsi_type='BL', value='true')
+            else:
+                el(sub, 'value', xsi_type='BL', nullFlavor='NI')
         sub = el(el(obs, 'outboundRelationship2', typeCode='PERT'), 'observation', classCode='OBS', moodCode='EVN')
         el(sub, 'code', code='27', codeSystem=OBS_CODE)
         el(sub, 'value', xsi_type='CE', code='0', codeSystem=ICH + '.1.11')  # E.i.7: Unknown
     if c['terms'] and SUMMARY_TODO in c['terms']:
         issues.append('H열 이상사례 내용이 ‘확인 필요’ 상태입니다. 실제 이상사례로 고쳐 주세요.')
-    if is_ae(c['sae']):
-        issues.append('J열(SAE)이 O입니다. 중대성 기준(E.i.3.2)과 신속보고 여부(C.1.7)를 확인하세요.')
+    if criterion == -1:
+        issues.append(f"J열(SAE) 값 ‘{c['sae']}’을 알 수 없어 중대성을 넣지 않았습니다. NI 또는 a~f 중 하나로 고쳐 주세요.")
+    elif criterion is not None:
+        issues.append(f"중대한 이상사례({c['sae']})입니다. 신속보고 대상(C.1.7 = true)으로 넣었으니 보고 기한을 확인하세요.")
 
     drugs = el(el(role, 'subjectOf2', typeCode='SBJ'), 'organizer', classCode='CATEGORY', moodCode='EVN')
     el(drugs, 'code', code='4', codeSystem=ICH + '.1.20')
@@ -250,7 +305,8 @@ def build(c, cfg, meddra, now=None):
         el(comment, 'value', ' / '.join(notes), xsi_type='ED')
         el(el(el(comment, 'author', typeCode='AUT'), 'assignedEntity', classCode='ASSIGNED'), 'code', code='1', codeSystem=ICH + '.1.21')
 
-    for code_, value in (('1', 'false'), ('23', 'false')):  # C.1.6.1, C.1.7
+    expedited = 'true' if criterion not in (None, -1) else 'false'  # 중대한 사례는 국내 신속보고(15일) 대상
+    for code_, value in (('1', 'false'), ('23', expedited)):  # C.1.6.1, C.1.7
         obs = el(el(inv, 'component', typeCode='COMP'), 'observationEvent', classCode='OBS', moodCode='EVN')
         el(obs, 'code', code=code_, codeSystem=OBS_CODE)
         el(obs, 'value', xsi_type='BL', value=value)

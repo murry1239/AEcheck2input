@@ -18,10 +18,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from engine import analyze, validate_records
+from engine import SAE_OPTIONS, analyze, validate_records
 
-VERSION = '0.3'
+VERSION = '0.4'
 ROOT = Path(__file__).resolve().parents[1]
+OUTPUTS = 'ACI_outputs'
 SETTINGS = ROOT / 'aci_settings.json'
 WORKSPACE = ROOT
 if SETTINGS.exists():
@@ -99,7 +100,7 @@ def load_file(path, backend='excel'):
     LOG.info('불러오기: %s · %d행 · AE O %d · 익명화 %d건', Path(path).name, len(records),
              sum(r['ae'] == 'O' for r in records), sum(r['anonymized'] for r in records))
     session = uuid.uuid4().hex
-    data = dict(session=session, workbook=workbook, records=records, backend=backend)
+    data = dict(session=session, workbook=workbook, records=records, backend=backend, sae_options=SAE_OPTIONS)
     SESSIONS[session] = copy.deepcopy(data)
     return data
 
@@ -111,25 +112,40 @@ def save_result(data):
     records = validate_records(data.get('records', []), session['records'])
     workbook = session['workbook']
     path = Path(workbook['path'])
-    stamp = datetime.now().strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:6]
-    folder = WORKSPACE / 'outputs' / (path.stem + '_' + stamp)
-    folder.mkdir(parents=True)
+    # 모든 결과를 작업 폴더의 ACI_outputs 한 곳에 둔다: IDBI_YYYYMMDD_ACI.xls, IDBI_YYYYMMDD_검토기록.json
+    folder = WORKSPACE / OUTPUTS
+    folder.mkdir(exist_ok=True)
     output = folder / (path.stem + '_ACI' + path.suffix.lower())
+    review_log = folder / (path.stem + '_검토기록.json')
+    if output.exists() and not data.get('overwrite'):
+        raise FileExistsError(f'{OUTPUTS}에 {output.name}이(가) 이미 있습니다.')
+    # 검증을 통과한 파일만 기존 결과와 바꾼다.
+    temp = folder / f'~{path.stem}_ACI_{uuid.uuid4().hex[:8]}{path.suffix.lower()}'
     payload = dict(source_hash=workbook['source_hash'], records=records)
-    result = office_job('export', path, payload, output, backend=session['backend'])
+    try:
+        result = office_job('export', path, payload, temp, backend=session['backend'])
+        try:
+            os.replace(temp, output)
+        except PermissionError:
+            raise RuntimeError(f'{output.name}이(가) Excel 등에서 열려 있어 바꿀 수 없습니다. 파일을 닫고 다시 저장하세요.')
+    finally:
+        temp.unlink(missing_ok=True)
+    result['output'] = str(output)
     log = dict(version=VERSION, backend=session['backend'], created_at=datetime.now().isoformat(),
                source=workbook['name'], source_sha256=workbook['source_hash'],
                output=output.name, ae_o=sum(r['ae'] == 'O' for r in records),
                ae_x=sum(r['ae'] == 'X' for r in records),
+               sae=sum(r['ae'] == 'O' and r.get('sae') not in ('', 'NI') for r in records),
                unconfirmed=sum(not r.get('reviewed') for r in records),
                relatedness_missing=sum(r['ae'] == 'O' and not r.get('relatedness') for r in records),
                verification=result, records=[{k:v for k,v in r.items() if k not in ('values', 'g_text')} for r in records])
-    (folder / '검토기록.json').write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding='utf-8')
-    LOG.info('결과 저장: %s · AE O %d / X %d · 검토 완료 전 %d', output, log['ae_o'], log['ae_x'], log['unconfirmed'])
+    review_log.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding='utf-8')
+    LOG.info('결과 저장: %s · AE O %d / X %d · SAE %d · 검토 완료 전 %d', output, log['ae_o'], log['ae_x'],
+             log['sae'], log['unconfirmed'])
     download_id = uuid.uuid4().hex
     DOWNLOADS[download_id] = output
-    return dict(output=str(output), download_id=download_id, name=output.name,
-                rows=result['rows'], ae_o=log['ae_o'], ae_x=log['ae_x'],
+    return dict(output=str(output), review_log=str(review_log), download_id=download_id, name=output.name,
+                rows=result['rows'], ae_o=log['ae_o'], ae_x=log['ae_x'], sae=log['sae'],
                 unconfirmed=log['unconfirmed'], relatedness_missing=log['relatedness_missing'], verified=True)
 
 
@@ -251,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
             else:
                 self.send(404, {'error':'없는 경로입니다.'})
+        except FileExistsError as e:
+            LOG.info('결과 파일 덮어쓰기 확인 요청: %s', e)
+            self.send(409, {'error':str(e), 'exists':True})
         except Exception as e:
             LOG.exception('요청 오류 %s', self.path)
             self.send(400, {'error':str(e)})

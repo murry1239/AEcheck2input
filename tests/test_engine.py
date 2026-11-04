@@ -67,6 +67,16 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_records([r,r],[r])
         with self.assertRaises(ValueError):validate_records([dict(r,summary='')],[r])
 
+    def test_sae_column(self):
+        r=screen(self.make('제품 부작용(복통)'),2,'s');r['values']=self.make('제품 부작용(복통)')
+        self.assertEqual(r['sae'],'NI')
+        self.assertEqual(validate_records([dict(r,sae='c. 입원 또는 입원기간의 연장')],[r])[0]['sae'],'c. 입원 또는 입원기간의 연장')
+        self.assertEqual(validate_records([dict(r,sae='')],[r])[0]['sae'],'NI')
+        self.assertEqual(validate_records([dict(r,ae='X',relatedness='',sae='a. 사망')],[r])[0]['sae'],'')
+        with self.assertRaises(ValueError):validate_records([dict(r,sae='중대함')],[r])
+        x=screen(self.make('구매 문의'),2,'s')
+        self.assertEqual((x['ae'],x['sae']),('X',''))
+
     def test_g_text_comes_from_server_not_client(self):
         r=screen(self.make('제품 부작용(복통)'),2,'s');r['values']=self.make('서버 문구')
         client=dict(r,values=self.make('바꾼 문구'))

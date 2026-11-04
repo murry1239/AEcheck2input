@@ -102,8 +102,9 @@ try {
             }
             $sheet.Columns.Item(7).ColumnWidth = 78
             $sheet.Columns.Item(8).ColumnWidth = 28
+            $sheet.Columns.Item(10).ColumnWidth = 22
             $sheet.Columns.Item(11).ColumnWidth = 18
-            foreach ($c in @(9,10,12,13)) { if ($sheet.Columns.Item($c).ColumnWidth -lt 12) { $sheet.Columns.Item($c).ColumnWidth = 12 } }
+            foreach ($c in @(9,12,13)) { if ($sheet.Columns.Item($c).ColumnWidth -lt 12) { $sheet.Columns.Item($c).ColumnWidth = 12 } }
             foreach ($r in $group.Group) {
                 $g = $sheet.Cells.Item([int]$r.row,7)
                 if (([string]$g.Value2) -cne ([string]$r.g_text)) { $g.Value2 = [string]$r.g_text } # 개인정보 익명화
@@ -114,6 +115,10 @@ try {
                 $h.NumberFormat = '@'
                 if ($r.ae -eq 'O') { $h.Value2='O — '+([string]$r.summary).Trim() } else { $h.Value2='X' }
                 $h.WrapText=$true; $h.VerticalAlignment=-4160
+                $j = $sheet.Cells.Item([int]$r.row,10) # J열 SAE
+                $j.Value2=[string]$r.sae
+                $j.WrapText=$true; $j.VerticalAlignment=-4160
+                [void][Runtime.InteropServices.Marshal]::ReleaseComObject($j)
                 $k = $sheet.Cells.Item([int]$r.row,11)
                 $k.Value2=[string]$r.relatedness
                 $k.WrapText=$true; $k.VerticalAlignment=-4160
@@ -144,7 +149,7 @@ try {
             if ($a.name -ne $b.name) { throw '저장 후 시트 이름 검증 실패' }
             $changed=@($payload.records | Where-Object { $_.sheet -eq $b.name } | ForEach-Object { [int]$_.row-1 })
             for ($row=0;$row -lt $b.count;$row++) { for ($col=0;$col -lt $b.columns;$col++) {
-                $edited=$changed.Count -gt 0 -and (($row -eq 0 -and $col -ge 7 -and $col -le 12) -or ($changed -contains $row -and $col -in @(6,7,10)))
+                $edited=$changed.Count -gt 0 -and (($row -eq 0 -and $col -ge 7 -and $col -le 12) -or ($changed -contains $row -and $col -in @(6,7,9,10)))
                 if ($edited) { continue }
                 if ($b.rows[$row][$col] -cne $a.rows[$row][$col] -or $b.formulas[$row][$col] -cne $a.formulas[$row][$col]) { throw "원본 값/수식 보존 검증 실패: $($b.name) 행 $($row+1) 열 $($col+1)" }
             } }
@@ -158,9 +163,10 @@ try {
                 $g=$sheet.Cells.Item([int]$r.row,7); $h=$sheet.Cells.Item([int]$r.row,8); $k=$sheet.Cells.Item([int]$r.row,11)
                 $expected='X'; if ($r.ae -eq 'O') { $expected='O — '+([string]$r.summary).Trim() }
                 if ($h.Value2 -cne $expected -or ([string]$k.Value2) -cne ([string]$r.relatedness) -or -not $g.WrapText) { throw "AE/인과관계/줄 바꿈 검증 실패: $($r.row)행" }
+                if (([string]$sheet.Cells.Item([int]$r.row,10).Value2) -cne ([string]$r.sae)) { throw "J열(SAE) 검증 실패: $($r.row)행" }
                 if (([string]$g.Value2) -cne ([string]$r.g_text)) { throw "G열 익명화 검증 실패: $($r.row)행" }
                 if ($r.ae -eq 'O' -and $g.Interior.Color -ne 65535) { throw "노란색 검증 실패: $($r.row)행" }
-                $details += @{sheet=$group.Name;row=[int]$r.row;h=$h.Value2;k=[string]$k.Value2}
+                $details += @{sheet=$group.Name;row=[int]$r.row;h=$h.Value2;j=[string]$r.sae;k=[string]$k.Value2}
                 foreach ($cell in @($g,$h,$k)) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($cell) }
             }
             [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sheet)

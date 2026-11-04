@@ -2,18 +2,31 @@ import shutil
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'aai'), str(ROOT / 'aci')]
-from e2b import ae_terms, age_group, case_id, is_ae, to_age, to_date, to_sex  # noqa: E402
+from e2b import ae_terms, age_group, case_id, clean_story, is_ae, narrative, parse_case, sae_criterion, to_age, to_date, to_sex  # noqa: E402
+from anonymize import anonymize  # noqa: E402
 import main  # noqa: E402
 
 CFG = main.CONFIG
 
 
-def row(n, ae, text='복용 후 복통', k='', sex='여자', age='60대', cube=''):
-    return {'row': n, 'values': ['불만', '2026-10-26', sex, age, '테스트정 10MG', '기타', text, ae, cube, '', k, '', '']}
+def row(n, ae, text='복용 후 복통', k='', sex='여자', age='60대', cube='', sae='NI'):
+    return {'row': n, 'values': ['불만', '2026-10-26', sex, age, '테스트정 10MG', '기타', text, ae, cube, sae, k, '', '']}
+
+
+def observation_values(xml):
+    """관찰 코드 → BL 값 목록 (value 또는 nullFlavor)."""
+    ns = '{urn:hl7-org:v3}'
+    found = {}
+    for obs in ET.fromstring(xml).iter():
+        code, value = obs.find(ns + 'code'), obs.find(ns + 'value')
+        if code is not None and value is not None and value.get('{http://www.w3.org/2001/XMLSchema-instance}type') == 'BL':
+            found.setdefault(code.get('code'), []).append(value.get('value') or value.get('nullFlavor'))
+    return found
 
 
 def workbook(*rows):
@@ -46,7 +59,28 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(case_id(CFG, '20261102', 5, '261102SP_MAMTA'), 'KR-ID-261102SP_MAMTA_0')
         self.assertEqual(case_id(CFG, '20261102', 5, 'KR-ID-261023SP_FAC_0'), 'KR-ID-261023SP_FAC_0')
         self.assertEqual(case_id(CFG, '20261102', 5, 'KR-ID-261023SP_FAC'), 'KR-ID-261023SP_FAC_0')
-        self.assertEqual(case_id(CFG, '20261102', 5, ''), 'KR-ID-IDBI20261102-0005')
+        self.assertEqual(case_id(CFG, '20261103', 50, ''), 'KR-ID-20261103SP-050')  # 임시 번호
+
+    def test_sae_criterion(self):
+        self.assertEqual([sae_criterion(v) for v in ('NI', '', 'a. 사망', 'c. 입원 또는 입원기간의 연장', 'f. 기타', 'O')],
+                         [None, None, 0, 2, 5, -1])
+
+    def test_narrative_matches_requested_format(self):
+        text = ('이전에 골드 복용했을 때에는 피로회복 느끼는게 확실히 느껴졌는데, 지금은 3개월 복용해도 별 느낌이 없는 것 같음. '
+                '성분이 바뀌였는지?\n\n-> 골드 현재 단종되었지만, 성분 동일함\n    의약품임. 효능효과 개인차 있을 수 있음 ')
+        c = parse_case(['불만', '2026-11-03', '남자', '70대', '아로나민골드정', '기타', text, 'O — 효과 없는 약물', '', 'NI',
+                        '평가 불능', '', ''], 50, '20261103', CFG, anonymize)
+        self.assertEqual(narrative(c, CFG),
+                         '접수일 2026-11-03\n원보고자: 성별 남성, 나이 70대\n의심 제품: 아로나민골드정\n이상사례: 효과 없는 약물\n'
+                         '회사 인과관계: 평가 불능\n\n70대 남성 소비자가 보고함. 이전에 골드 복용했을 때에는 피로회복 느끼는게 확실히 '
+                         '느껴졌는데, 지금은 3개월 복용해도 별 느낌이 없는 것 같음. 성분이 바뀌였는지?\n\n'
+                         '- 골드 현재 단종되었지만, 성분 동일함\n- 의약품임. 효능효과 개인차 있을 수 있음')
+
+    def test_story_drops_voc_headers_and_greetings(self):
+        home = ('(홈페이지)\n최초인입일 20261025\n\n문의)\n고객명 : HKD\n이메일 : a***@b.com\n답변방법 : 이메일\n제목 혈압계\n'
+                '문의내용 혈압계 사용 후 두통이 있음\n\n답변)\n안녕하세요, 일동제약입니다.\n당사 홈페이지를 방문해 주셔서 감사합니다.\n감사합니다.')
+        self.assertEqual(clean_story(home), '혈압계 사용 후 두통이 있음')
+        self.assertEqual(clean_story('복통\n-> 확인 중\n    (답변 후 문자 예정)'), '복통\n- 확인 중\n- (답변 후 문자 예정)')
 
 
 class ConvertTests(unittest.TestCase):
@@ -89,6 +123,23 @@ class ConvertTests(unittest.TestCase):
         self.assertIn('<administrativeGenderCode code="2" codeSystem="1.0.5218" />', xml)
         self.assertIn('<code code="5" codeSystem="2.16.840.1.113883.3.989.2.1.1.6" />', xml)
         self.assertIn('extension="MFDS-2020000084"', xml)
+
+    def test_sae_sets_criterion_and_expedited(self):
+        s, out = self.run_convert(workbook(row(2, 'O — 복통, 설사', cube='T', sae='c. 입원 또는 입원기간의 연장')),
+                                  {'meddra_version': '', 'terms': {}})
+        flags = observation_values(self.xml(s, out))
+        self.assertEqual(flags['33'], ['true', 'true'])  # E.i.3.2c, 이상사례 2개 모두
+        self.assertEqual(flags['34'], ['NI', 'NI'])  # E.i.3.2a
+        self.assertEqual(flags['23'], ['true'])  # C.1.7 신속보고
+        self.assertIn('중대성: c. 입원 또는 입원기간의 연장', s['cases'][0]['narrative'])
+        s, out = self.run_convert(workbook(row(2, 'O — 복통', cube='T')), {'meddra_version': '', 'terms': {}})
+        flags = observation_values(self.xml(s, out))
+        self.assertEqual((flags['33'], flags['23']), (['NI'], ['false']))
+
+    def test_outputs_go_to_one_folder(self):
+        s, out = self.run_convert(workbook(row(2, 'O — 복통', cube='T')), {'meddra_version': '', 'terms': {}})
+        self.assertEqual(sorted(p.name for p in out.iterdir()),
+                         ['ICSR_R3(KR)_KR-ID-T_0_테스트정10MG.xml', 'IDBI_20261026_AAI결과.html', 'IDBI_20261026_AAI결과.json'])
 
     def test_xsd_valid(self):
         if not (ROOT / CFG['schema_path']).exists():
