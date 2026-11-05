@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from engine import SAE_OPTIONS, analyze, validate_records
 
-VERSION = '0.4'
+VERSION = '0.5'
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = 'ACI_outputs'
 SETTINGS = ROOT / 'aci_settings.json'
@@ -34,12 +34,15 @@ RUNTIME.mkdir(exist_ok=True)
 # 로그에는 파일명·행 번호·오류만 남기고 불만 원문은 남기지 않는다.
 LOGS = ROOT / 'logs'
 LOGS.mkdir(exist_ok=True)
-LOG_FILE = LOGS / ('aci_' + datetime.now().strftime('%Y%m%d') + '.log')
-LOG = logging.getLogger('aci')
-LOG.setLevel(logging.INFO)
-_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
-_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
-LOG.addHandler(_handler)
+# ACI와 A2X가 하나의 IAXG 로그 파일을 같이 쓴다 (a2x/main.py와 같은 설정).
+LOG_FILE = LOGS / ('iaxg_' + datetime.now().strftime('%Y%m%d') + '.log')
+LOG = logging.getLogger('iaxg.aci')
+_iaxg_log = logging.getLogger('iaxg')
+_iaxg_log.setLevel(logging.INFO)
+if not _iaxg_log.handlers:
+    _handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s', '%Y-%m-%d %H:%M:%S'))
+    _iaxg_log.addHandler(_handler)
 TOKEN = secrets.token_urlsafe(32)
 SESSIONS = {}
 DOWNLOADS = {}
@@ -161,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -171,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if origin and origin != 'http://127.0.0.1:' + str(self.server.server_port):
             return False
-        return secrets.compare_digest(self.headers.get('X-ACI-Token', ''), TOKEN)
+        return secrets.compare_digest(self.headers.get('X-IAXG-Token', ''), TOKEN)
 
     def do_GET(self):
         route = urlparse(self.path)
@@ -179,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, (ROOT / 'aci' / 'index.html').read_bytes(), 'text/html; charset=utf-8')
             return
         if not self.authorized():
-            self.send(403, {'error':'접근 권한이 없습니다. ACI 실행 파일에서 화면을 다시 여세요.'})
+            self.send(403, {'error':'접근 권한이 없습니다. IAXG 실행 파일에서 화면을 다시 여세요.'})
             return
         try:
             if route.path == '/api/files':

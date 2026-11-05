@@ -6,8 +6,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / 'aai'), str(ROOT / 'aci')]
-from e2b import ae_terms, age_group, case_id, clean_story, is_ae, narrative, parse_case, sae_criterion, to_age, to_date, to_sex  # noqa: E402
+sys.path[:0] = [str(ROOT / 'a2x'), str(ROOT / 'aci')]
+from e2b import ae_terms, age_group, age_text, case_id, clean_story, is_ae, narrative, parse_case, sae_criterion, to_age, to_date, to_sex  # noqa: E402
 from anonymize import anonymize  # noqa: E402
 import main  # noqa: E402
 
@@ -41,6 +41,19 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(to_age(''))
         self.assertIsNone(to_age('10대미만'))
         self.assertEqual([age_group(a) for a in ('20대', '50대', '60대', '70대이상', '10대', '55')], ['5', '5', '', '6', '', ''])
+
+    def test_round_number_age_is_a_band(self):
+        # IDBI D열의 '70', '60'은 정확한 나이가 아니라 연령대
+        self.assertEqual(to_age('70'), (8, '10.a'))
+        self.assertEqual(to_age('60'), (7, '10.a'))
+        self.assertEqual(to_age('55'), (55, 'a'))
+        self.assertEqual(to_age('55세'), (55, 'a'))
+        self.assertEqual((age_group('70'), age_group('40')), ('6', '5'))
+        self.assertEqual([age_text(a) for a in ('70', '70대이상', '55', '')], ['70대', '70대이상', '55세', ''])
+        c = parse_case(['불만', '2026-11-03', '여성', '60', '테스트정', '기타', '복용 후 두통', 'O — 두통', '', 'NI', '', '', ''],
+                       9, '20261103', CFG, anonymize)
+        self.assertIn('원보고자: 성별 여성, 나이 60대', narrative(c, CFG))
+        self.assertIn('60대 여성 소비자가 보고함.', narrative(c, CFG))
 
     def test_ae_column(self):
         self.assertTrue(is_ae('O — 복통, 설사'))
@@ -139,7 +152,7 @@ class ConvertTests(unittest.TestCase):
     def test_outputs_go_to_one_folder(self):
         s, out = self.run_convert(workbook(row(2, 'O — 복통', cube='T')), {'meddra_version': '', 'terms': {}})
         self.assertEqual(sorted(p.name for p in out.iterdir()),
-                         ['ICSR_R3(KR)_KR-ID-T_0_테스트정10MG.xml', 'IDBI_20261026_AAI결과.html', 'IDBI_20261026_AAI결과.json'])
+                         ['ICSR_R3(KR)_KR-ID-T_0_테스트정10MG.xml', 'IDBI_20261026_A2X결과.html', 'IDBI_20261026_A2X결과.json'])
 
     def test_xsd_valid(self):
         if not (ROOT / CFG['schema_path']).exists():

@@ -1,4 +1,4 @@
-"""AAI 로컬 화면: 작업 폴더의 ACI 결과 엑셀을 골라 E2B(R3) XML을 만든다. ACI app.py와 같은 방식."""
+"""A2X 로컬 화면 (IAXG 통합 화면의 2단계): 작업 폴더의 ACI 결과 엑셀을 골라 E2B(R3) XML을 만든다. ACI app.py와 같은 방식."""
 import json
 import os
 import secrets
@@ -9,11 +9,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import main as aai
+import main as a2x
 
-ROOT = aai.ROOT
+ROOT = a2x.ROOT
 SETTINGS = ROOT / 'aci_settings.json'  # 작업 폴더는 ACI와 함께 쓴다.
-LOG = aai.LOG
+LOG = a2x.LOG
 TOKEN = secrets.token_urlsafe(32)
 BUSY = threading.Lock()
 STATE = {'files': set()}  # 마지막 실행에서 만든 XML (미리보기 허용 목록)
@@ -53,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -63,28 +63,34 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if origin and origin != 'http://127.0.0.1:' + str(self.server.server_port):
             return False
-        return secrets.compare_digest(self.headers.get('X-AAI-Token', ''), TOKEN)
+        return secrets.compare_digest(self.headers.get('X-IAXG-Token', ''), TOKEN)
+
+    def strip_prefix(self):
+        # IAXG 화면에서는 A2X API를 /api/a2x/…로 부른다.
+        if self.path.startswith('/api/a2x/'):
+            self.path = '/api/' + self.path[len('/api/a2x/'):]
 
     def do_GET(self):
+        self.strip_prefix()
         route = urlparse(self.path)
         if route.path == '/':
-            self.send(200, (ROOT / 'aai' / 'index.html').read_bytes(), 'text/html; charset=utf-8')
+            self.send(200, (ROOT / 'a2x' / 'index.html').read_bytes(), 'text/html; charset=utf-8')
             return
         if not self.authorized():
-            self.send(403, {'error': '접근 권한이 없습니다. AAI 실행 파일에서 화면을 다시 여세요.'})
+            self.send(403, {'error': '접근 권한이 없습니다. IAXG 실행 파일에서 화면을 다시 여세요.'})
             return
         try:
             if route.path == '/api/files':
                 self.send(200, {'workspace': str(workspace()), 'files': list(available_files()),
-                                'output': str(workspace() / aai.OUTPUTS), 'version': aai.VERSION,
-                                'sender': aai.CONFIG['sender_id'], 'receiver': aai.CONFIG['receiver_id']})
+                                'output': str(workspace() / a2x.OUTPUTS), 'version': a2x.VERSION,
+                                'sender': a2x.CONFIG['sender_id'], 'receiver': a2x.CONFIG['receiver_id']})
             elif route.path == '/api/xml':
                 name = Path(parse_qs(route.query).get('file', [''])[0]).name
                 if name not in STATE['files']:
                     raise ValueError('미리볼 수 있는 XML이 아닙니다. 먼저 XML을 만드세요.')
-                self.send(200, (workspace() / aai.OUTPUTS / name).read_bytes(), 'text/plain; charset=utf-8')
+                self.send(200, (workspace() / a2x.OUTPUTS / name).read_bytes(), 'text/plain; charset=utf-8')
             elif route.path == '/api/log':
-                log_file = Path(aai._handler.baseFilename)
+                log_file = a2x.LOG_FILE
                 lines = log_file.read_text(encoding='utf-8').splitlines() if log_file.exists() else []
                 self.send(200, {'path': str(log_file), 'lines': lines[-300:]})
             else:
@@ -94,6 +100,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(400, {'error': str(e)})
 
     def do_POST(self):
+        self.strip_prefix()
         if not self.authorized():
             self.send(403, {'error': '접근 권한이 없습니다.'})
             return
@@ -110,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {'logged': True})
             return
         if self.path == '/api/stop':
-            LOG.info('AAI 종료')
+            LOG.info('IAXG 종료')
             self.send(200, {'stopped': True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
@@ -129,11 +136,11 @@ class Handler(BaseHTTPRequestHandler):
                 source = available_files().get(data.get('name', ''))
                 if not source:
                     raise ValueError('선택한 ACI 결과 파일이 없습니다. 목록을 새로고침하세요.')
-                summary = aai.run(source, workspace() / aai.OUTPUTS)
+                summary = a2x.run(source, workspace() / a2x.OUTPUTS)
                 STATE['files'] = {c['file'] for c in summary['cases']}
                 self.send(200, summary)
             elif self.path == '/api/open':
-                folder = workspace() / aai.OUTPUTS
+                folder = workspace() / a2x.OUTPUTS
                 folder.mkdir(exist_ok=True)
                 os.startfile(folder)  # Windows 탐색기로 저장 폴더를 연다.
                 self.send(200, {'opened': str(folder)})
@@ -151,8 +158,8 @@ def start():
     url = 'http://127.0.0.1:' + str(server.server_port) + '/#' + TOKEN
     runtime = ROOT / '.runtime'
     runtime.mkdir(exist_ok=True)
-    (runtime / 'aai_url.txt').write_text(url, encoding='utf-8')
-    LOG.info('AAI %s 화면 시작 · 작업 폴더: %s', aai.VERSION, workspace())
+    (runtime / 'a2x_url.txt').write_text(url, encoding='utf-8')
+    LOG.info('A2X %s 화면 시작 · 작업 폴더: %s', a2x.VERSION, workspace())
     if '--no-browser' not in sys.argv:
         webbrowser.open(url)
     try:

@@ -1,4 +1,4 @@
-"""AAI (AE Auto Input): ACI 결과 엑셀의 H열 O 행 → 사례별 ICH E2B(R3) XML."""
+"""A2X (AE to XML, 이전 이름 AAI): ACI 결과 엑셀의 H열 O 행 → 사례별 ICH E2B(R3) XML."""
 import argparse
 import html
 import json
@@ -18,29 +18,33 @@ sys.path.insert(0, str(ROOT / 'aci'))  # 익명화 규칙은 ACI와 같은 것�
 from anonymize import anonymize  # noqa: E402
 from e2b import build, is_ae, narrative, parse_case  # noqa: E402
 
-VERSION = '0.2'
-OUTPUTS = 'AAI_outputs'  # ACI_outputs와 같은 작업 폴더에 둔다
-CONFIG = json.loads((ROOT / 'aai' / 'aai_config.json').read_text(encoding='utf-8'))
-_local = ROOT / 'aai' / 'aai_config.local.json'  # 담당자 이름·이메일 등 PC별 값 (저장소에 올리지 않음)
+VERSION = '0.3'
+OUTPUTS = 'A2X_outputs'  # ACI_outputs와 같은 작업 폴더에 둔다
+CONFIG = json.loads((ROOT / 'a2x' / 'a2x_config.json').read_text(encoding='utf-8'))
+_local = ROOT / 'a2x' / 'a2x_config.local.json'  # 담당자 이름·이메일 등 PC별 값 (저장소에 올리지 않음)
 if _local.exists():
     CONFIG.update(json.loads(_local.read_text(encoding='utf-8')))
 LOGS = ROOT / 'logs'
 LOGS.mkdir(exist_ok=True)
-LOG = logging.getLogger('aai')
-LOG.setLevel(logging.INFO)
-_handler = logging.FileHandler(LOGS / ('aai_' + datetime.now().strftime('%Y%m%d') + '.log'), encoding='utf-8')
-_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
-LOG.addHandler(_handler)
+# ACI와 A2X가 하나의 IAXG 로그 파일을 같이 쓴다 (aci/app.py와 같은 설정).
+LOG_FILE = LOGS / ('iaxg_' + datetime.now().strftime('%Y%m%d') + '.log')
+LOG = logging.getLogger('iaxg.a2x')
+_iaxg_log = logging.getLogger('iaxg')
+_iaxg_log.setLevel(logging.INFO)
+if not _iaxg_log.handlers:
+    _handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s', '%Y-%m-%d %H:%M:%S'))
+    _iaxg_log.addHandler(_handler)
 
 
 def read_workbook(path):
     """Excel로 ACI 결과 A~M열을 읽는다. ACI와 같은 PowerShell을 쓴다."""
-    job = ROOT / '.runtime' / ('aai_' + uuid.uuid4().hex)
+    job = ROOT / '.runtime' / ('a2x_' + uuid.uuid4().hex)
     job.mkdir(parents=True)
     result_path = job / 'result.json'
     bundled = Path.home() / '.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe'
     powershell = str(bundled) if bundled.exists() else (shutil.which('pwsh') or 'powershell.exe')
-    cmd = [powershell, '-NoProfile', '-File', str(ROOT / 'aai' / 'read_aci.ps1'),
+    cmd = [powershell, '-NoProfile', '-File', str(ROOT / 'a2x' / 'read_aci.ps1'),
            '-InputPath', str(path), '-JsonOut', str(result_path)]
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
@@ -100,30 +104,30 @@ def convert(workbook, out_dir, meddra, now=None):
                               terms=case['terms'], sae=case['sae'], relatedness=case['relatedness'], status=status,
                               issues=issues, xsd_error=xsd_error, narrative=narrative(case, CONFIG)))
             LOG.info('%s · %s · %s', name, status, '; '.join(issues) or '-')
-    # IDBI_20261103_ACI.xls → IDBI_20261103_AAI결과.html / .json
+    # IDBI_20261103_ACI.xls → IDBI_20261103_A2X결과.html / .json
     stem = re.sub(r'_ACI$', '', Path(workbook['name']).stem)
     summary = dict(version=VERSION, source=workbook['name'], source_sha256=workbook.get('source_hash', ''),
                    created_at=now.isoformat(timespec='seconds'), schema=schema_note or '검증함', output=str(out_dir),
-                   report=f'{stem}_AAI결과.html', ae_cases=len(cases), skipped_rows=skipped,
+                   report=f'{stem}_A2X결과.html', ae_cases=len(cases), skipped_rows=skipped,
                    meddra_version=meddra.get('meddra_version', ''), config=CONFIG, cases=cases)
-    (out_dir / f'{stem}_AAI결과.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+    (out_dir / f'{stem}_A2X결과.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     (out_dir / summary['report']).write_text(report(summary), encoding='utf-8')
     return summary
 
 
 def run(source, out_dir=None):
-    """ACI 결과 엑셀 1개 → XML. 저장 위치 기본값: 작업 폴더\\AAI_outputs."""
+    """ACI 결과 엑셀 1개 → XML. 저장 위치 기본값: 작업 폴더\\A2X_outputs."""
     source = Path(source).resolve()
     out_dir = Path(out_dir) if out_dir else workspace(source) / OUTPUTS
-    LOG.info('AAI %s 시작: %s', VERSION, source.name)
+    LOG.info('A2X %s 시작: %s', VERSION, source.name)
     try:
-        meddra = json.loads((ROOT / 'aai' / 'meddra_map.json').read_text(encoding='utf-8'))
+        meddra = json.loads((ROOT / 'a2x' / 'meddra_map.json').read_text(encoding='utf-8'))
         summary = convert(read_workbook(source), out_dir, meddra)
     except Exception:
-        LOG.exception('AAI 실패: %s', source.name)
+        LOG.exception('A2X 실패: %s', source.name)
         raise
     counts = {k: sum(c['status'] == k for c in summary['cases']) for k in ('완료', '검토 필요', '오류')}
-    LOG.info('AAI 완료: AE %d건 (완료 %d / 검토 필요 %d / 오류 %d), 건너뜀 %d행 → %s', summary['ae_cases'],
+    LOG.info('A2X 완료: AE %d건 (완료 %d / 검토 필요 %d / 오류 %d), 건너뜀 %d행 → %s', summary['ae_cases'],
              counts['완료'], counts['검토 필요'], counts['오류'], summary['skipped_rows'], out_dir)
     return summary
 
@@ -139,13 +143,13 @@ def report(s):
         for c in s['cases'])
     note = (f"<p>발송자 {esc(s['config']['sender_id'])} → 수신자 {esc(s['config']['receiver_id'])} · "
             f"저장 폴더: <code>{esc(s['output'])}</code></p>")
-    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>AAI {s['version']} · {esc(s['source'])}</title>
+    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>A2X {s['version']} · {esc(s['source'])}</title>
 <style>body{{font:14px "Malgun Gothic",sans-serif;margin:24px;color:#172132;background:#f5f6f8}}h1{{font-size:22px}}
 table{{border-collapse:collapse;width:100%;background:#fff}}th,td{{border:1px solid #d8dfe7;padding:8px;text-align:left;vertical-align:top}}
 th{{background:#eef2f7}}tr.ok td:nth-child(7){{color:#1f7a3a}}tr.warn td:nth-child(7){{color:#9a6400}}tr.err td:nth-child(7){{color:#ae2020;font-weight:700}}
 .stats span{{display:inline-block;background:#fff;border:1px solid #d8dfe7;border-radius:6px;padding:8px 14px;margin:0 8px 12px 0}}
 p.warn{{background:#fff9e8;border-left:3px solid #d0a039;padding:10px 14px}}code{{background:#eef2f7;padding:1px 4px}}</style></head><body>
-<h1>AAI {s['version']} · E2B(R3) XML 생성 결과</h1>
+<h1>A2X {s['version']} · E2B(R3) XML 생성 결과</h1>
 <p>원본: {esc(s['source'])} · 생성: {esc(s['created_at'])} · XSD: {esc(s['schema'])} · MedDRA 버전: {esc(s['meddra_version'] or '미설정')}</p>
 <div class="stats"><span>AE 사례 {s['ae_cases']}</span><span>완료 {counts['완료']}</span><span>검토 필요 {counts['검토 필요']}</span><span>오류 {counts['오류']}</span><span>건너뛴 행(H열 O 아님) {s['skipped_rows']}</span></div>
 {note}<p>‘검토 필요’ XML은 구조는 맞지만 MedDRA 코드 등 담당자가 채울 항목이 있습니다. ‘오류’ XML은 안전성 DB로 가져오지 마세요.</p>
@@ -164,10 +168,10 @@ def workspace(source):
 
 
 def main():
-    """명령줄 실행 (화면은 aai/app.py)."""
+    """명령줄 실행 (화면은 iaxg/app.py)."""
     parser = argparse.ArgumentParser(description='ACI 결과 엑셀 → E2B(R3) XML')
     parser.add_argument('input', help='ACI 결과 엑셀 (IDBI_YYYYMMDD_ACI.xls)')
-    parser.add_argument('--out', help='저장 폴더 (기본: 작업 폴더의 AAI_outputs)')
+    parser.add_argument('--out', help='저장 폴더 (기본: 작업 폴더의 A2X_outputs)')
     parser.add_argument('--no-open', action='store_true', help='결과 보고서를 브라우저로 열지 않음')
     args = parser.parse_args()
     summary = run(args.input, args.out)

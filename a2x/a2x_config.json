@@ -1,5 +1,5 @@
 {
-  "version": "0.2",
+  "version": "0.3",
   "_설명": "값은 cubeSAFETY에서 출력한 KR E2B(R3) XML(2026-11-03)에 맞췄다. 담당자 이름·이메일처럼 개인 정보는 aai_config.local.json(저장소에 올리지 않음)에 넣는다.",
   "regional": "KR",
   "country": "KR",

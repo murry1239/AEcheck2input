@@ -98,16 +98,35 @@ def to_sex(value):
     return '1' if '남' in text else '2' if '여' in text else ''
 
 
-def to_age(value):
-    """'40대' → (5, '10.a'): IG D.2.2 ‘7 decades = 60대’. '55' → (55, 'a')."""
+def age_band(value):
+    """IDBI D열의 연령대. '70대', '70대이상', 그리고 숫자만 있는 '70'·'60'(10 단위)도 연령대로 본다 → 70."""
     text = str(value or '').replace(' ', '')
     m = re.match(r'(\d{1,3})대', text)
     if m and '미만' not in text:
-        return int(m.group(1)) // 10 + 1, '10.a'
-    m = re.fullmatch(r'(\d{1,3})(?:세)?', text)
+        return int(m.group(1))
+    m = re.fullmatch(r'(\d{1,3})', text)
+    if m and int(m.group(1)) % 10 == 0 and int(m.group(1)) > 0:
+        return int(m.group(1))
+    return None
+
+
+def to_age(value):
+    """연령대 → (decade, '10.a'): IG D.2.2 ‘7 decades = 60대’이므로 70대 → 8. '55'·'55세' → (55, 'a')."""
+    band = age_band(value)
+    if band is not None:
+        return band // 10 + 1, '10.a'
+    m = re.fullmatch(r'(\d{1,3})(?:세)?', str(value or '').replace(' ', ''))
     if m:
         return int(m.group(1)), 'a'
     return None
+
+
+def age_text(value):
+    """서술용: '70' → '70대', '70대이상' → 그대로, '55' → '55세'."""
+    text = str(value or '').strip()
+    if re.fullmatch(r'\d{1,3}', text):
+        return f'{text}대' if age_band(text) is not None else f'{text}세'
+    return text
 
 
 def case_id(cfg, report_date, row, cube=''):
@@ -124,11 +143,10 @@ def case_id(cfg, report_date, row, cube=''):
 
 def age_group(age):
     """D.2.3: 범위가 한 그룹에 들어갈 때만. 20~50대 → 5 성인, 70대 이상 → 6 노인."""
-    m = re.match(r'(\d{1,3})대', str(age or '').replace(' ', ''))
-    if not m:
+    band = age_band(age)
+    if band is None:
         return ''
-    decade = int(m.group(1))
-    return '5' if 20 <= decade <= 50 else '6' if decade >= 70 else ''
+    return '5' if 20 <= band <= 50 else '6' if band >= 70 else ''
 
 
 def stable_uuid(*parts):
@@ -149,7 +167,7 @@ def el(parent, tag, text=None, xsi_type=None, **attrs):
 def narrative(c, cfg):
     """H.1: 요약 머리말 + ‘70대 남성 소비자가 보고함.’으로 시작하는 정리된 원문."""
     sex = {'1': '남성', '2': '여성'}.get(to_sex(c['sex']), '')
-    age = c['age'] + '세' if re.fullmatch(r'\d{1,3}', c['age']) else c['age']  # '60' → '60세', '70대'는 그대로
+    age = age_text(c['age'])  # '70' → '70대', '55' → '55세'
     lines = [f"접수일 {c['date_text']}",
              f"원보고자: 성별 {sex or '미기재'}, 나이 {age or '미기재'}",
              f"의심 제품: {c['product'] or '미기재'}",

@@ -7,9 +7,9 @@ inputs/
 outputs/
 aai_outputs/
 ACI_outputs/
-AAI_outputs/
+A2X_outputs/
 *.xml
-!aai/**/*.xml
+!a2x/**/*.xml
 work/
 logs/
 .runtime/
@@ -24,7 +24,7 @@ E2B(R3)_IG_Complete _package v1_11/
 
 # PC별 설정·실행 환경
 aci_settings.json
-aai/aai_config.local.json
+a2x/a2x_config.local.json
 xml파일예시_*/
 node_modules
 __pycache__/

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IAXG · IDBI AE XML Generator</title>
+<style>
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:#f5f6f8;color:#172132;font:14px "Malgun Gothic",sans-serif;display:flex;flex-direction:column}
+header{padding:16px 30px 0;background:#fff;border-bottom:1px solid #d8dfe7}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:23px;margin:0 0 4px}h1 span{font-weight:400;color:#657388}p{margin:0;color:#526074;line-height:1.6}.small{font-size:12px;color:#647185}
+button{font:inherit;border:1px solid #b7c1cf;background:#fff;border-radius:6px;padding:9px 14px;cursor:pointer;color:#172132}button.primary{background:#2457a5;color:#fff;border-color:#2457a5}button:hover{filter:brightness(.96)}
+.actions{display:flex;gap:8px}.tabs{display:flex;gap:4px;margin-top:14px}.tab{border:1px solid #d8dfe7;border-bottom:none;border-radius:8px 8px 0 0;background:#eef2f7;padding:11px 20px;color:#44546a}.tab.active{background:#fff;color:#172132;font-weight:700;box-shadow:inset 0 3px 0 #2457a5}.tab .sub{font-weight:400;font-size:12px;color:#647185;margin-left:6px}
+.banner{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#eef8ee;border:1px solid #9cbb9d;border-radius:7px;padding:10px 14px;margin:12px 30px 0}.hidden{display:none!important}
+.logpanel{background:#fff;border:1px solid #d8dfe7;border-radius:8px;margin:12px 30px 0;overflow:hidden}.logpanel .head{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid #e1e6ed}.logpanel pre{margin:0;padding:12px 16px;max-height:300px;overflow:auto;font:12px/1.6 Consolas,"Malgun Gothic",monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#fbfcfd}
+.frames{flex:1;min-height:0;position:relative}.frames iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#f5f6f8}
+</style></head><body>
+<header><div class="top"><div><h1>IAXG <span id="ver">IDBI AE XML Generator</span></h1><p>1단계 ACI에서 IDBI 불만의 AE를 검토하고, 2단계 A2X에서 AE 사례를 E2B(R3) XML로 만듭니다.</p></div>
+<div class="actions"><button id="log" title="오류가 난 위치와 처리 기록을 확인합니다.">로그기록</button><button id="stop">도구 종료</button></div></div>
+<nav class="tabs" role="tablist"><button class="tab active" id="tab-aci" role="tab">1. ACI<span class="sub">AE 검토 · 결과 엑셀</span></button><button class="tab" id="tab-a2x" role="tab">2. A2X<span class="sub">AE → XML</span></button></nav></header>
+<div id="banner" class="banner hidden"><span id="bannertext"></span><button class="primary" id="goa2x">2. A2X에서 XML 만들기 →</button><button id="bannerclose">닫기</button></div>
+<div id="logpanel" class="logpanel hidden"><div class="head"><strong>로그기록</strong><span class="small" id="logpath" style="flex:1"></span><button id="logrefresh">새로고침</button><button id="logcopy">복사</button><button id="logclose">닫기</button></div><pre id="logtext"></pre></div>
+<div class="frames"><iframe id="frame-aci" title="1. ACI"></iframe><iframe id="frame-a2x" title="2. A2X" class="hidden"></iframe></div>
+<script>
+const token=location.hash.slice(1)||sessionStorage.getItem('iaxgToken')||'';sessionStorage.setItem('iaxgToken',token);history.replaceState(null,'','/');
+const $=id=>document.getElementById(id),frame={aci:$('frame-aci'),a2x:$('frame-a2x')};
+frame.aci.src='/aci#'+token;frame.a2x.src='/a2x#'+token;
+const page=step=>frame[step].contentWindow.iaxg;
+async function api(path,body){const res=await fetch(path,{method:body?'POST':'GET',headers:{'X-IAXG-Token':token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const data=await res.json();if(!res.ok)throw Error(data.error||'처리 실패');return data}
+function show(step){for(const s of ['aci','a2x']){frame[s].classList.toggle('hidden',s!==step);$('tab-'+s).classList.toggle('active',s===step)}if(step==='a2x')page('a2x')?.refresh()}
+$('tab-aci').onclick=()=>show('aci');$('tab-a2x').onclick=()=>show('a2x');
+let lastSaved=null;
+// ACI가 결과 엑셀을 저장하면 A2X에 그 파일을 골라 두고 이동 버튼을 보여 준다 (원시자료 정리봇의 A→B 흐름과 같음).
+window.iaxgSaved=d=>{lastSaved=d;$('bannertext').textContent=`ACI 결과 ${d.name} 저장 완료 · AE O ${d.ae_o}행 (SAE ${d.sae}행)`;$('banner').classList.remove('hidden');page('a2x')?.select('ACI_outputs/'+d.name)};
+window.iaxgGoA2X=async d=>{show('a2x');await page('a2x')?.select('ACI_outputs/'+(d||lastSaved).name);$('banner').classList.add('hidden')};
+$('goa2x').onclick=()=>window.iaxgGoA2X(lastSaved);$('bannerclose').onclick=()=>$('banner').classList.add('hidden');
+async function showLog(){try{const d=await api('/api/log');$('logpath').textContent=d.path;$('logtext').replaceChildren(...(d.lines.length?d.lines:['기록이 없습니다.']).map(l=>{const s=document.createElement('div');s.textContent=l;if(/\[ERROR\]|Traceback|Error|실패/.test(l))s.style.color='#ae2020';else if(/\[WARNING\]/.test(l))s.style.color='#9a6400';return s}));$('logpanel').classList.remove('hidden');$('logtext').scrollTop=$('logtext').scrollHeight}catch(e){alert('로그를 읽지 못했습니다: '+e.message)}}
+$('log').onclick=showLog;$('logrefresh').onclick=showLog;$('logclose').onclick=()=>$('logpanel').classList.add('hidden');
+$('logcopy').onclick=async()=>{try{await navigator.clipboard.writeText($('logpath').textContent+'\n'+$('logtext').innerText)}catch(e){alert('복사하지 못했습니다. 로그 파일을 직접 여세요: '+$('logpath').textContent)}};
+function closed(){document.title='IAXG 종료됨';document.body.innerHTML='<main style="padding:80px 30px;text-align:center"><h1>IAXG를 종료했습니다</h1><p>이 탭을 닫아 주세요. 다시 쓰려면 IAXG_실행.cmd를 실행합니다.</p></main>'}
+$('stop').onclick=async()=>{if(page('aci')?.dirty()&&!confirm('IAXG를 종료합니다. ACI에서 저장하지 않은 검토 내용은 사라집니다. 종료할까요?'))return;try{await api('/api/stop',{})}catch(e){alert(e.message);return}page('aci')?.reset();sessionStorage.removeItem('iaxgToken');window.close();setTimeout(closed,300)};
+api('/api/version').then(v=>{$('ver').textContent=`${v.iaxg} · IDBI AE XML Generator`;document.title=`IAXG ${v.iaxg} · IDBI AE XML Generator`;$('tab-aci').querySelector('.sub').textContent=`ACI ${v.aci} · AE 검토 · 결과 엑셀`;$('tab-a2x').querySelector('.sub').textContent=`A2X ${v.a2x} · AE → XML`}).catch(()=>{});
+</script></body></html>

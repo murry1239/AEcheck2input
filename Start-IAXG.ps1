@@ -1,4 +1,4 @@
-﻿﻿$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $candidates = @(
     (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'),
@@ -12,8 +12,8 @@ if (-not $pythonPath) {
 }
 if (-not $pythonPath) {
     Add-Type -AssemblyName System.Windows.Forms
-    [void][System.Windows.Forms.MessageBox]::Show('AAI 실행에 필요한 Python이 없습니다. Python 설치 후 다시 실행해 주세요.', 'AAI')
+    [void][System.Windows.Forms.MessageBox]::Show('IAXG 실행에 필요한 Python이 없습니다. Python 또는 LibreOffice 설치 후 다시 실행해 주세요.', 'IAXG')
     exit 1
 }
-$appPath = Join-Path $root 'aai\app.py'
+$appPath = Join-Path $root 'iaxg\app.py'
 Start-Process -FilePath $pythonPath -ArgumentList @('"' + $appPath + '"') -WorkingDirectory $root -WindowStyle Hidden
