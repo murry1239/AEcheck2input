@@ -130,13 +130,12 @@ def age_text(value):
 
 
 def case_id(cfg, report_date, row, cube=''):
-    """I열(Cube) 사례번호가 있으면 cubeSAFETY 형식(KR-ID-261102SP_MAMTA_0)으로, 없으면 임시 번호."""
+    """I열(Cube) 사례번호를 그대로 쓴다 (ACI에서 기본값 KR-ID-YYMMDDSP_행번호, 사용자가 고칠 수 있음).
+    'KR-'로 시작하지 않으면 앞에 KR-ID-만 붙인다. I열이 비어 있으면 임시 번호."""
     cube = re.sub(r'\s+', '', str(cube or ''))
     if cube:
         if not cube.upper().startswith(cfg['country'] + '-'):
             cube = cfg['case_prefix'] + cube
-        if not re.search(r'_\d+$', cube):
-            cube += cfg['case_version_suffix']
         return cube
     return f"{cfg['case_prefix']}{report_date}SP-{row:03d}"  # 임시 번호: KR-ID-20261103SP-050
 
@@ -183,8 +182,8 @@ def narrative(c, cfg):
     return '\n'.join(lines) + '\n\n' + (opening + ' ' + story if story else opening)
 
 
-def build(c, cfg, meddra, now=None):
-    """c: parse_case() 결과. 반환: (XML bytes, issues)"""
+def build(c, cfg, meddra, now=None, story=None):
+    """c: parse_case() 결과, story: 사용자가 고친 H.1 서술(없으면 자동 서술). 반환: (XML bytes, issues)"""
     now = now or datetime.now()
     stamp = now.strftime('%Y%m%d%H%M%S') + cfg['timezone']
     cid = c['case_id']
@@ -220,8 +219,7 @@ def build(c, cfg, meddra, now=None):
     el(inv, 'id', extension=cid, root=ICH + '.3.1')  # C.1.1
     el(inv, 'id', extension=cid, root=ICH + '.3.2')  # C.1.8.1
     el(inv, 'code', code='PAT_ADV_EVNT', codeSystem='2.16.840.1.113883.5.4')
-    story = narrative(c, cfg)
-    el(inv, 'text', story)  # H.1
+    el(inv, 'text', story or narrative(c, cfg))  # H.1
     el(inv, 'statusCode', code='active')
     el(el(inv, 'effectiveTime'), 'low', value=c['report_date'])  # C.1.4
     el(inv, 'availabilityTime', value=c['report_date'])  # C.1.5

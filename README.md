@@ -4,10 +4,10 @@ IDBI VOC 불만 자료에서 이상사례(AE)를 확인해 엑셀로 정리하�
 
 | 단계 | 화면 탭 | 입력 | 결과 (작업 폴더 아래) | 버전 |
 | --- | --- | --- | --- | --- |
-| 1 | **1. ACI** · AE 검토 | `IDBI_YYYYMMDD.xls` | `ACI_outputs\IDBI_YYYYMMDD_ACI.xls`, `…_검토기록.json` | 0.5 |
-| 2 | **2. A2X** · AE → XML | ACI 결과 엑셀 | `A2X_outputs\ICSR_R3(KR)_사례번호_제품명.xml`, `…_A2X결과.html/json` | 0.3 |
+| 1 | **1. ACI** · AE 검토 | `IDBI_YYYYMMDD.xls` | `ACI_outputs\IDBI_YYYYMMDD_ACI.xls`, `…_검토기록.json` | 0.6 |
+| 2 | **2. A2X** · AE → XML | ACI 결과 엑셀 | `A2X_outputs\ICSR_R3(KR)_사례번호_제품명.xml`, `…_A2X결과.html/json` | 0.4 |
 
-- ACI에서 결과 엑셀을 저장하면 A2X 탭에 그 파일이 골라지고, **2. A2X에서 XML 만들기 →** 버튼이 나타납니다 (원시자료 정리봇의 A → B 흐름과 같음).
+- ACI에서 결과 엑셀을 저장하면 A2X 탭에 그 파일이 골라지고, **2. A2X에서 Narration 검토 →** 버튼이 나타납니다 (원시자료 정리봇의 A → B 흐름과 같음).
 - A2X는 이전 이름이 AAI(AE Auto Input)였습니다. 안전성 DB(cubeSAFETY, Argus, LSMV, Veeva Vault Safety 등)에 직접 접속하지 않고, E2B(R3) 가져오기로 읽을 XML 파일을 만듭니다.
 
 ## 실행
@@ -15,8 +15,8 @@ IDBI VOC 불만 자료에서 이상사례(AE)를 확인해 엑셀로 정리하�
 Windows, 데스크톱 MS Office Excel, Python 3.10 이상이 필요합니다.
 
 1. `IAXG_실행.cmd`를 더블클릭합니다. 브라우저에 IAXG 화면이 열립니다.
-2. **1. ACI** 탭: 작업 폴더를 지정하고 `IDBI_YYYYMMDD.xls`를 불러와 행별로 AE·SAE·인과관계를 검토한 뒤 **결과 엑셀 저장**.
-3. **2. A2X** 탭: 저장한 ACI 결과가 골라져 있습니다. **XML 만들기** → 사례별 서술(H.1)과 ‘검토 필요’ 사항을 확인합니다.
+2. **1. ACI** 탭: 작업 폴더를 지정하고 `IDBI_YYYYMMDD.xls`를 불러와 행별로 AE·SAE·인과관계를 검토합니다. AE가 O인 행은 I열 사례번호가 `KR-ID-YYMMDDSP_행번호`로 채워지며 고칠 수 있습니다. 끝나면 **결과 엑셀 저장**.
+3. **2. A2X** 탭: 저장한 ACI 결과가 골라져 있습니다. **Narration 검토** → 사례별 서술(H.1)을 고치고 ‘검토 필요’ 사항을 확인 → **XML 만들기**로 XML·결과 보고서를 저장합니다. 검토 단계에서는 파일을 만들지 않습니다.
 4. 화면의 주의사항대로 AE명(MedDRA)과 서술을 확인·수정하고, 안전성 DB에 가져온 뒤 확인·QC 합니다.
 5. 끝나면 **도구 종료** (서버가 끝나고 탭이 닫힘). 오류는 **로그기록**에서 확인합니다 (`logs/iaxg_YYYYMMDD.log`).
 

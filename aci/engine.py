@@ -109,8 +109,17 @@ def analyze(workbook):
             values = list(row['values'])
             values[6], result['anonymized'] = anonymize(values[6])
             result['values'] = values
+            result['cube_default'] = default_case_number(workbook.get('name', ''), row['row'], values[1])
+            result['cube'] = result['cube_default'] if result['ae'] == 'O' else ''
             records.append(result)
     return records
+
+
+def default_case_number(file_name, row, date_value=''):
+    """I열 기본 사례번호: IDBI_20261104.xls의 50행 → KR-ID-261104SP_050 (파일명 날짜가 없으면 B열 날짜)."""
+    m = re.search(r'IDBI_\d{2}(\d{6})', str(file_name)) or re.search(r'\d{2}(\d{2})[-./]?(\d{2})[-./]?(\d{2})', str(date_value))
+    yymmdd = ''.join(m.groups()) if m else ''
+    return RULES['case_number_format'].format(yymmdd=yymmdd, row=int(row))
 
 
 def validate_records(records, source_records):
@@ -135,6 +144,11 @@ def validate_records(records, source_records):
         if r.get('sae', '') not in ['', *SAE_OPTIONS]:
             raise ValueError(f"{r['row']}행 J열(SAE) 값이 선택 항목에 없습니다.")
         r['sae'] = (r.get('sae') or SAE_OPTIONS[0]) if r['ae'] == 'O' else ''
+        cube = re.sub(r'\s+', '', str(r.get('cube') or ''))
+        if len(cube) > 100:
+            raise ValueError(f"{r['row']}행 I열 사례번호가 너무 깁니다 (100자 이하).")
+        # I열 사례번호: AE O 행만. 비우면 기본 번호로 되돌린다.
+        r['cube'] = (cube or original.get('cube_default', '')) if r['ae'] == 'O' else ''
         if r['ae'] == 'O' and not r.get('summary', '').strip():
             raise ValueError('AE가 O인 행에 이상사례 내용을 입력하세요.')
         if len(r.get('summary', '')) > 32000:

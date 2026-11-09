@@ -132,11 +132,30 @@ class Handler(BaseHTTPRequestHandler):
                 SETTINGS.write_text(json.dumps({'workspace': str(folder)}, ensure_ascii=False), encoding='utf-8')
                 LOG.info('작업 폴더 변경: %s', folder)
                 self.send(200, {'workspace': str(folder), 'files': list(available_files())})
-            elif self.path == '/api/run':
+            elif self.path == '/api/review':
+                # 1) Narration 검토: Excel을 읽어 서술·상태만 보여 주고 파일은 쓰지 않는다.
                 source = available_files().get(data.get('name', ''))
                 if not source:
                     raise ValueError('선택한 ACI 결과 파일이 없습니다. 목록을 새로고침하세요.')
-                summary = a2x.run(source, workspace() / a2x.OUTPUTS)
+                a2x.LOG.info('A2X %s Narration 검토: %s', a2x.VERSION, source.name)
+                workbook = a2x.read_workbook(source)
+                summary = a2x.convert(workbook, workspace() / a2x.OUTPUTS, a2x.load_meddra(), write=False)
+                review_id = secrets.token_hex(8)
+                STATE.update(review={'id': review_id, 'source': source, 'workbook': workbook}, files=set())
+                summary['review_id'] = review_id
+                self.send(200, summary)
+            elif self.path == '/api/make':
+                # 2) XML 만들기: 검토한 파일에 사용자가 고친 서술을 넣어 A2X_outputs에 저장한다.
+                review = STATE.get('review')
+                if not review or review['id'] != data.get('review_id'):
+                    raise ValueError('Narration 검토를 먼저 하세요. (검토 후 다른 파일을 열었거나 화면을 새로 열었습니다.)')
+                source = review['source']
+                if not source.exists() or a2x.file_hash(source) != review['workbook'].get('source_hash'):
+                    raise ValueError(f'{source.name}이(가) Narration 검토 후 바뀌었습니다. 다시 검토하세요.')
+                out_dir = workspace() / a2x.OUTPUTS
+                summary = a2x.convert(review['workbook'], out_dir, a2x.load_meddra(), narratives=data.get('narratives'))
+                edited = sum(c['edited'] for c in summary['cases'])
+                a2x.LOG.info('A2X XML 만들기: %s · AE %d건 · 서술 수정 %d건 → %s', source.name, summary['ae_cases'], edited, out_dir)
                 STATE['files'] = {c['file'] for c in summary['cases']}
                 self.send(200, summary)
             elif self.path == '/api/open':

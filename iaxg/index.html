@@ -13,7 +13,7 @@ button{font:inherit;border:1px solid #b7c1cf;background:#fff;border-radius:6px;p
 <header><div class="top"><div><h1>IAXG <span id="ver">IDBI AE XML Generator</span></h1><p>1단계 ACI에서 IDBI 불만의 AE를 검토하고, 2단계 A2X에서 AE 사례를 E2B(R3) XML로 만듭니다.</p></div>
 <div class="actions"><button id="log" title="오류가 난 위치와 처리 기록을 확인합니다.">로그기록</button><button id="stop">도구 종료</button></div></div>
 <nav class="tabs" role="tablist"><button class="tab active" id="tab-aci" role="tab">1. ACI<span class="sub">AE 검토 · 결과 엑셀</span></button><button class="tab" id="tab-a2x" role="tab">2. A2X<span class="sub">AE → XML</span></button></nav></header>
-<div id="banner" class="banner hidden"><span id="bannertext"></span><button class="primary" id="goa2x">2. A2X에서 XML 만들기 →</button><button id="bannerclose">닫기</button></div>
+<div id="banner" class="banner hidden"><span id="bannertext"></span><button class="primary" id="goa2x">2. A2X에서 Narration 검토 →</button><button id="bannerclose">닫기</button></div>
 <div id="logpanel" class="logpanel hidden"><div class="head"><strong>로그기록</strong><span class="small" id="logpath" style="flex:1"></span><button id="logrefresh">새로고침</button><button id="logcopy">복사</button><button id="logclose">닫기</button></div><pre id="logtext"></pre></div>
 <div class="frames"><iframe id="frame-aci" title="1. ACI"></iframe><iframe id="frame-a2x" title="2. A2X" class="hidden"></iframe></div>
 <script>
@@ -33,6 +33,6 @@ async function showLog(){try{const d=await api('/api/log');$('logpath').textCont
 $('log').onclick=showLog;$('logrefresh').onclick=showLog;$('logclose').onclick=()=>$('logpanel').classList.add('hidden');
 $('logcopy').onclick=async()=>{try{await navigator.clipboard.writeText($('logpath').textContent+'\n'+$('logtext').innerText)}catch(e){alert('복사하지 못했습니다. 로그 파일을 직접 여세요: '+$('logpath').textContent)}};
 function closed(){document.title='IAXG 종료됨';document.body.innerHTML='<main style="padding:80px 30px;text-align:center"><h1>IAXG를 종료했습니다</h1><p>이 탭을 닫아 주세요. 다시 쓰려면 IAXG_실행.cmd를 실행합니다.</p></main>'}
-$('stop').onclick=async()=>{if(page('aci')?.dirty()&&!confirm('IAXG를 종료합니다. ACI에서 저장하지 않은 검토 내용은 사라집니다. 종료할까요?'))return;try{await api('/api/stop',{})}catch(e){alert(e.message);return}page('aci')?.reset();sessionStorage.removeItem('iaxgToken');window.close();setTimeout(closed,300)};
+$('stop').onclick=async()=>{const lost=[page('aci')?.dirty()&&'ACI에서 저장하지 않은 검토 내용',page('a2x')?.dirty()&&'A2X에서 XML로 만들지 않은 서술 수정'].filter(Boolean);if(lost.length&&!confirm(`IAXG를 종료합니다. ${lost.join(', ')}이(가) 사라집니다. 종료할까요?`))return;try{await api('/api/stop',{})}catch(e){alert(e.message);return}page('aci')?.reset();page('a2x')?.reset();sessionStorage.removeItem('iaxgToken');window.close();setTimeout(closed,300)};
 api('/api/version').then(v=>{$('ver').textContent=`${v.iaxg} · IDBI AE XML Generator`;document.title=`IAXG ${v.iaxg} · IDBI AE XML Generator`;$('tab-aci').querySelector('.sub').textContent=`ACI ${v.aci} · AE 검토 · 결과 엑셀`;$('tab-a2x').querySelector('.sub').textContent=`A2X ${v.a2x} · AE → XML`}).catch(()=>{});
 </script></body></html>

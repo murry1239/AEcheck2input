@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / 'aci'))  # 익명화 규칙은 ACI와 같은 것�
 from anonymize import anonymize  # noqa: E402
 from e2b import build, is_ae, narrative, parse_case  # noqa: E402
 
-VERSION = '0.3'
+VERSION = '0.4'
 OUTPUTS = 'A2X_outputs'  # ACI_outputs와 같은 작업 폴더에 둔다
 CONFIG = json.loads((ROOT / 'a2x' / 'a2x_config.json').read_text(encoding='utf-8'))
 _local = ROOT / 'a2x' / 'a2x_config.local.json'  # 담당자 이름·이메일 등 PC별 값 (저장소에 올리지 않음)
@@ -75,14 +75,23 @@ def load_schema():
     return etree.XMLSchema(etree.parse(str(path))), ''
 
 
-def convert(workbook, out_dir, meddra, now=None):
-    """workbook: read_aci.ps1 결과. H열 O 행만 XML로 만든다."""
+MAX_NARRATIVE = 100000  # H.1 최대 길이 (ICH)
+
+
+def convert(workbook, out_dir, meddra, now=None, narratives=None, write=True):
+    """workbook: read_aci.ps1 결과. H열 O 행만 XML로 만든다.
+
+    write=False: Narration 검토용. 파일을 쓰지 않고 서술·상태만 돌려준다.
+    narratives: {행 번호: 사용자가 고친 서술}. 없으면 자동 서술을 쓴다.
+    """
     now = now or datetime.now()
+    narratives = {int(k): v for k, v in (narratives or {}).items()}
     m = re.search(r'IDBI_(\d{8})', workbook['name'])
     file_date = m.group(1) if m else ''
     schema, schema_note = load_schema()
     cases, skipped = [], 0
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if write:
+        out_dir.mkdir(parents=True, exist_ok=True)
     for sheet in workbook['sheets']:
         for record in sheet['records']:
             values = record['values']
@@ -90,11 +99,16 @@ def convert(workbook, out_dir, meddra, now=None):
                 skipped += 1
                 continue
             case = parse_case(values, int(record['row']), file_date, CONFIG, anonymize)
-            xml, issues = build(case, CONFIG, meddra, now)
+            auto = narrative(case, CONFIG)
+            story = str(narratives.get(case['row'], auto)).replace('\r\n', '\n').strip() or auto
+            if len(story) > MAX_NARRATIVE:
+                raise ValueError(f"{case['row']}행 서술이 H.1 최대 길이({MAX_NARRATIVE:,}자)를 넘습니다.")
+            xml, issues = build(case, CONFIG, meddra, now, story)
             # cubeSAFETY 출력 파일명처럼: ICSR_R3(KR)_사례번호_제품명.xml
             product = re.sub(r'[\\/:*?"<>|\s]+', '', case['product'])[:40]
             name = f"ICSR_R3({CONFIG['country']})_{case['case_id']}" + (f'_{product}' if product else '') + '.xml'
-            (out_dir / name).write_bytes(xml)
+            if write:
+                (out_dir / name).write_bytes(xml)
             status, xsd_error = '검토 필요' if issues else '완료', ''
             if schema is not None:
                 from lxml import etree
@@ -102,17 +116,30 @@ def convert(workbook, out_dir, meddra, now=None):
                     status, xsd_error = '오류', str(schema.error_log.last_error)
             cases.append(dict(row=case['row'], case_id=case['case_id'], file=name, product=case['product'],
                               terms=case['terms'], sae=case['sae'], relatedness=case['relatedness'], status=status,
-                              issues=issues, xsd_error=xsd_error, narrative=narrative(case, CONFIG)))
-            LOG.info('%s · %s · %s', name, status, '; '.join(issues) or '-')
+                              issues=issues, xsd_error=xsd_error, narrative=story, auto_narrative=auto,
+                              edited=story != auto))
+            if write:
+                LOG.info('%s · %s · 서술 %s · %s', name, status, '수정' if story != auto else '자동', '; '.join(issues) or '-')
     # IDBI_20261103_ACI.xls → IDBI_20261103_A2X결과.html / .json
     stem = re.sub(r'_ACI$', '', Path(workbook['name']).stem)
     summary = dict(version=VERSION, source=workbook['name'], source_sha256=workbook.get('source_hash', ''),
                    created_at=now.isoformat(timespec='seconds'), schema=schema_note or '검증함', output=str(out_dir),
-                   report=f'{stem}_A2X결과.html', ae_cases=len(cases), skipped_rows=skipped,
+                   report=f'{stem}_A2X결과.html', ae_cases=len(cases), skipped_rows=skipped, written=write,
                    meddra_version=meddra.get('meddra_version', ''), config=CONFIG, cases=cases)
-    (out_dir / f'{stem}_A2X결과.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
-    (out_dir / summary['report']).write_text(report(summary), encoding='utf-8')
+    if write:
+        (out_dir / f'{stem}_A2X결과.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+        (out_dir / summary['report']).write_text(report(summary), encoding='utf-8')
     return summary
+
+
+def file_hash(path):
+    """read_aci.ps1의 source_hash와 같은 SHA-256 (소문자 16진수)."""
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def load_meddra():
+    return json.loads((ROOT / 'a2x' / 'meddra_map.json').read_text(encoding='utf-8'))
 
 
 def run(source, out_dir=None):
@@ -121,8 +148,7 @@ def run(source, out_dir=None):
     out_dir = Path(out_dir) if out_dir else workspace(source) / OUTPUTS
     LOG.info('A2X %s 시작: %s', VERSION, source.name)
     try:
-        meddra = json.loads((ROOT / 'a2x' / 'meddra_map.json').read_text(encoding='utf-8'))
-        summary = convert(read_workbook(source), out_dir, meddra)
+        summary = convert(read_workbook(source), out_dir, load_meddra())
     except Exception:
         LOG.exception('A2X 실패: %s', source.name)
         raise

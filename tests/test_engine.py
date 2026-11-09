@@ -2,7 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'aci'))
-from engine import map_causality, screen, fingerprint, validate_records, analyze
+from engine import map_causality, screen, fingerprint, validate_records, analyze, default_case_number
 from anonymize import anonymize, initials
 
 class EngineTests(unittest.TestCase):
@@ -76,6 +76,20 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_records([dict(r,sae='중대함')],[r])
         x=screen(self.make('구매 문의'),2,'s')
         self.assertEqual((x['ae'],x['sae']),('X',''))
+
+    def test_case_number_column(self):
+        self.assertEqual(default_case_number('IDBI_20261104.xls',50),'KR-ID-261104SP_050')
+        self.assertEqual(default_case_number('inputs/x/IDBI_20261104.xls',7),'KR-ID-261104SP_007')
+        self.assertEqual(default_case_number('결과.xls',12,'2026-11-04'),'KR-ID-261104SP_012')  # 파일명에 날짜가 없으면 B열
+        wb={'name':'IDBI_20261104.xls','sheets':[{'name':'s','records':[
+            {'row':50,'values':self.make('20261104 / 제품 부작용(복통)')},{'row':51,'values':self.make('구매 문의')}]}]}
+        o,x=analyze(wb)
+        self.assertEqual((o['ae'],o['cube']),('O','KR-ID-261104SP_050'))
+        self.assertEqual((x['ae'],x['cube']),('X',''))
+        self.assertEqual(validate_records([dict(o,cube=' KR-ID-261104SP_MAMTA '),x],[o,x])[0]['cube'],'KR-ID-261104SP_MAMTA')
+        self.assertEqual(validate_records([dict(o,cube=''),x],[o,x])[0]['cube'],'KR-ID-261104SP_050')  # 비우면 기본값
+        self.assertEqual(validate_records([dict(o,ae='X',relatedness=''),x],[o,x])[0]['cube'],'')
+        with self.assertRaises(ValueError):validate_records([dict(o,cube='K'*101),x],[o,x])
 
     def test_g_text_comes_from_server_not_client(self):
         r=screen(self.make('제품 부작용(복통)'),2,'s');r['values']=self.make('서버 문구')

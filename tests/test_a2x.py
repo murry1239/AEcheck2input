@@ -69,9 +69,9 @@ class ParseTests(unittest.TestCase):
         self.assertEqual((to_sex('남성'), to_sex('여자'), to_sex('')), ('1', '2', ''))
 
     def test_case_id_from_cube_column(self):
-        self.assertEqual(case_id(CFG, '20261102', 5, '261102SP_MAMTA'), 'KR-ID-261102SP_MAMTA_0')
+        self.assertEqual(case_id(CFG, '20261102', 5, '261102SP_MAMTA'), 'KR-ID-261102SP_MAMTA')
         self.assertEqual(case_id(CFG, '20261102', 5, 'KR-ID-261023SP_FAC_0'), 'KR-ID-261023SP_FAC_0')
-        self.assertEqual(case_id(CFG, '20261102', 5, 'KR-ID-261023SP_FAC'), 'KR-ID-261023SP_FAC_0')
+        self.assertEqual(case_id(CFG, '20261104', 50, 'KR-ID-261104SP_050'), 'KR-ID-261104SP_050')
         self.assertEqual(case_id(CFG, '20261103', 50, ''), 'KR-ID-20261103SP-050')  # 임시 번호
 
     def test_sae_criterion(self):
@@ -109,7 +109,7 @@ class ConvertTests(unittest.TestCase):
         s, out = self.run_convert(workbook(row(2, 'O — 복통', cube='261026SP_TST'), row(3, 'X'), row(4, '')),
                                   {'meddra_version': '', 'terms': {}})
         self.assertEqual((s['ae_cases'], s['skipped_rows']), (1, 2))
-        self.assertEqual([p.name for p in out.glob('*.xml')], ['ICSR_R3(KR)_KR-ID-261026SP_TST_0_테스트정10MG.xml'])
+        self.assertEqual([p.name for p in out.glob('*.xml')], ['ICSR_R3(KR)_KR-ID-261026SP_TST_테스트정10MG.xml'])
 
     def test_missing_meddra_or_cube_is_review_and_complete_is_done(self):
         s, _ = self.run_convert(workbook(row(2, 'O — 복통', cube='261026SP_TST')), {'meddra_version': '', 'terms': {}})
@@ -128,7 +128,7 @@ class ConvertTests(unittest.TestCase):
         xml = self.xml(s, out)
         self.assertNotIn('홍길동', xml)
         self.assertNotIn('1234-5678', xml)
-        self.assertIn('<id extension="KR-ID-261026SP_TST_0" root="2.16.840.1.113883.3.989.2.1.3.1" />', xml)
+        self.assertIn('<id extension="KR-ID-261026SP_TST" root="2.16.840.1.113883.3.989.2.1.3.1" />', xml)
         self.assertIn('<value xsi:type="ST">not reported</value>', xml)
         self.assertIn('<value xsi:type="CE" code="3" codeSystem="2.16.840.1.113883.3.989.5.1.10.1.5" />', xml)
         self.assertIn('<value xsi:type="PQ" value="7" unit="10.a" />', xml)
@@ -149,10 +149,28 @@ class ConvertTests(unittest.TestCase):
         flags = observation_values(self.xml(s, out))
         self.assertEqual((flags['33'], flags['23']), (['NI'], ['false']))
 
+    def test_review_writes_nothing_and_make_uses_edited_narrative(self):
+        wb = workbook(row(2, 'O — 복통', cube='KR-ID-261026SP_002'), row(3, 'O — 두통', cube='KR-ID-261026SP_003'))
+        meddra = {'meddra_version': '', 'terms': {}}
+        out = Path(tempfile.mkdtemp()) / 'A2X_outputs'
+        self.addCleanup(shutil.rmtree, out.parent, True)
+        s = main.convert(wb, out, meddra, write=False)  # Narration 검토
+        self.assertFalse(out.exists())
+        self.assertEqual([c['edited'] for c in s['cases']], [False, False])
+        self.assertEqual(s['cases'][0]['narrative'], s['cases'][0]['auto_narrative'])
+        new = '접수일 2026-10-26\n담당자가 고친 서술 <특수문자 & 포함>'
+        s = main.convert(wb, out, meddra, narratives={'2': new, 3: '   '})  # XML 만들기 (빈 서술 → 자동 서술)
+        self.assertEqual([c['edited'] for c in s['cases']], [True, False])
+        xml = (out / s['cases'][0]['file']).read_text(encoding='utf-8')
+        self.assertIn('<text>접수일 2026-10-26\n담당자가 고친 서술 &lt;특수문자 &amp; 포함&gt;</text>', xml)
+        self.assertIn(s['cases'][1]['auto_narrative'].split('\n')[0], (out / s['cases'][1]['file']).read_text(encoding='utf-8'))
+        with self.assertRaises(ValueError):
+            main.convert(wb, out, meddra, narratives={2: 'x' * (main.MAX_NARRATIVE + 1)})
+
     def test_outputs_go_to_one_folder(self):
         s, out = self.run_convert(workbook(row(2, 'O — 복통', cube='T')), {'meddra_version': '', 'terms': {}})
         self.assertEqual(sorted(p.name for p in out.iterdir()),
-                         ['ICSR_R3(KR)_KR-ID-T_0_테스트정10MG.xml', 'IDBI_20261026_A2X결과.html', 'IDBI_20261026_A2X결과.json'])
+                         ['ICSR_R3(KR)_KR-ID-T_테스트정10MG.xml', 'IDBI_20261026_A2X결과.html', 'IDBI_20261026_A2X결과.json'])
 
     def test_xsd_valid(self):
         if not (ROOT / CFG['schema_path']).exists():

@@ -1,11 +1,10 @@
 {
-  "version": "0.3",
+  "version": "0.4",
   "_설명": "값은 cubeSAFETY에서 출력한 KR E2B(R3) XML(2026-11-03)에 맞췄다. 담당자 이름·이메일처럼 개인 정보는 aai_config.local.json(저장소에 올리지 않음)에 넣는다.",
   "regional": "KR",
   "country": "KR",
   "company_code": "ID",
   "case_prefix": "KR-ID-",
-  "case_version_suffix": "_0",
   "sender_id": "MFDS-2020000084",
   "receiver_id": "MFDS-O-KR",
   "sender_organisation": "일동제약",
