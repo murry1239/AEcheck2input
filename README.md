@@ -4,7 +4,7 @@ IDBI VOC 불만 자료에서 이상사례(AE)를 확인해 엑셀로 정리하�
 
 | 단계 | 화면 탭 | 입력 | 결과 (작업 폴더 아래) | 버전 |
 | --- | --- | --- | --- | --- |
-| 1 | **1. ACI** · AE 검토 | `IDBI_YYYYMMDD.xls` | `ACI_outputs\IDBI_YYYYMMDD_ACI.xls`, `…_검토기록.json` | 0.6 |
+| 1 | **1. ACI** · AE 검토 | `IDBI_YYYYMMDD.xls` | `ACI_outputs\IDBI_YYYYMMDD_ACI.xls`, `…_검토기록.json` | 0.7 |
 | 2 | **2. A2X** · AE → XML | ACI 결과 엑셀 | `A2X_outputs\ICSR_R3(KR)_사례번호_제품명.xml`, `…_A2X결과.html/json` | 0.4 |
 
 - ACI에서 결과 엑셀을 저장하면 A2X 탭에 그 파일이 골라지고, **2. A2X에서 Narration 검토 →** 버튼이 나타납니다 (원시자료 정리봇의 A → B 흐름과 같음).

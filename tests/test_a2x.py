@@ -58,6 +58,7 @@ class ParseTests(unittest.TestCase):
     def test_ae_column(self):
         self.assertTrue(is_ae('O — 복통, 설사'))
         self.assertFalse(is_ae('X'))
+        self.assertFalse(is_ae('X — 단순 구매 문의'))  # ACI 0.7: X 행도 내용이 붙을 수 있음
         self.assertFalse(is_ae(''))
         self.assertEqual(ae_terms('O — 복통, 설사; 복통'), ['복통', '설사'])
         self.assertEqual(ae_terms('O'), [])

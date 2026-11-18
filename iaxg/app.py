@@ -11,7 +11,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = '0.6'
+VERSION = '0.7'
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'aci'), str(ROOT / 'a2x')]
 

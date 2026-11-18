@@ -77,6 +77,11 @@ class EngineTests(unittest.TestCase):
         x=screen(self.make('구매 문의'),2,'s')
         self.assertEqual((x['ae'],x['sae']),('X',''))
 
+    def test_x_row_keeps_summary(self):
+        # 0.7: H열이 X여도 입력한 내용은 저장한다 (엑셀 H열 'X — 내용')
+        r=screen(self.make('구매 문의'),2,'s');r['values']=self.make('구매 문의')
+        self.assertEqual(validate_records([dict(r,summary='단순 구매 문의, AE 아님')],[r])[0]['summary'],'단순 구매 문의, AE 아님')
+
     def test_case_number_column(self):
         self.assertEqual(default_case_number('IDBI_20261104.xls',50),'KR-ID-261104SP_050')
         self.assertEqual(default_case_number('inputs/x/IDBI_20261104.xls',7),'KR-ID-261104SP_007')

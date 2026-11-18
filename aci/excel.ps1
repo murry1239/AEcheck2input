@@ -15,6 +15,12 @@ function Write-Json($Object, $Path) {
     $text = ConvertTo-Json -InputObject $Object -Depth 30
     [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding($false)))
 }
+# H열: 'O — 내용', X도 내용이 있으면 'X — 내용' (내용이 없으면 'X')
+function HValue($r) {
+    $text = ([string]$r.summary).Trim()
+    if ($r.ae -eq 'O' -or $text) { return [string]$r.ae + ' — ' + $text }
+    return 'X'
+}
 function Get-Hash($Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Get-Values($Sheet) {
     $used = $Sheet.UsedRange
@@ -114,7 +120,7 @@ try {
                 if ($r.ae -eq 'O') { $g.Interior.Color = 65535 } # RGB yellow
                 $h = $sheet.Cells.Item([int]$r.row,8)
                 $h.NumberFormat = '@'
-                if ($r.ae -eq 'O') { $h.Value2='O — '+([string]$r.summary).Trim() } else { $h.Value2='X' }
+                $h.Value2 = HValue $r
                 $h.WrapText=$true; $h.VerticalAlignment=-4160
                 $i = $sheet.Cells.Item([int]$r.row,9) # I열 Cube 사례번호
                 $i.NumberFormat = '@'
@@ -167,7 +173,7 @@ try {
             for ($c=0;$c -lt 6;$c++) { if ($sheet.Cells.Item(1,$c+8).Value2 -cne $extra[$c]) { throw '추가 제목 검증 실패' } }
             foreach ($r in $group.Group) {
                 $g=$sheet.Cells.Item([int]$r.row,7); $h=$sheet.Cells.Item([int]$r.row,8); $k=$sheet.Cells.Item([int]$r.row,11)
-                $expected='X'; if ($r.ae -eq 'O') { $expected='O — '+([string]$r.summary).Trim() }
+                $expected = HValue $r
                 if ($h.Value2 -cne $expected -or ([string]$k.Value2) -cne ([string]$r.relatedness) -or -not $g.WrapText) { throw "AE/인과관계/줄 바꿈 검증 실패: $($r.row)행" }
                 if (([string]$sheet.Cells.Item([int]$r.row,10).Value2) -cne ([string]$r.sae)) { throw "J열(SAE) 검증 실패: $($r.row)행" }
                 if (([string]$sheet.Cells.Item([int]$r.row,9).Value2) -cne ([string]$r.cube)) { throw "I열(사례번호) 검증 실패: $($r.row)행" }
